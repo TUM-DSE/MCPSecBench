@@ -1,6 +1,6 @@
 # MCPSecBench
 
-It includes ![MCPSecBench](mcpbench) and ![data](data) in our experiment.
+It includes ![MCPSecBench](code) and ![data](data) in our experiment.
 
 ## Overview of MCPSecBench
 
@@ -33,14 +33,16 @@ It includes ![MCPSecBench](mcpbench) and ![data](data) in our experiment.
 ## How to use MCPSecBench
 
 ### Test Script
-The auto check only supports OpenAI at present.
+The auto check supports OpenAI and Cursor at present. To implement in Claude Desktop, please change the parameter of wait_for_image in main.py such as img/cursor_init.png to the screenshot of Claude Desktop.
 
 - set API_Key. export OPENAI_API_KEY xxxx / export ANTHROPIC_API_KEY xxx
 
 - uv run main.py mode(0 for Claude in CLI mode, 1 for OpenAI, 2 for Cursor) e.g. uv run main.py 1
 
 **Delete /tmp/state.json at first.**
+
 **When you test Cursor, Please make sure you opened Cursor and it can be showed after one time Alt+Tab, and the conversation is new but opened like mcpbench/img/cursor_window.png**
+
 ### Testing LLM models and MCP servers with own MCP client
 
 - First launch all remote servers. For example: uv run download.py
