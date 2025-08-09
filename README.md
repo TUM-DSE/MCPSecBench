@@ -66,6 +66,10 @@ The auto check supports OpenAI and Cursor at present. To implement in Claude Des
 
 Experiments Results are shown in ![data](data) folder.
 
+# License
+
+Released under the MIT License.
+
 <!--
 - Tool Poison Attacks
 
@@ -163,7 +167,7 @@ Experiments Results are shown in ![data](data) folder.
 
   ![indirect-openai](img/indirect-openai.png)
   
-  Cursor:
+  Cursor:Released under the MIT License.
 
   ![indirect-cursor](img/indirect-cursor.png)
 
