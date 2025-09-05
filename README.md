@@ -1,6 +1,16 @@
 # MCPSecBench
 
-It includes ![MCPSecBench](code) and ![data](data) in our experiment.
+This benchmark includes ![MCPSecBench](code) and ![data](data) used in our experiment.
+
+A technical report is available as follows:
+```bibtex
+@article{yang2025mcpsecbench,
+  title={MCPSecBench: A Systematic Security Benchmark and Playground for Testing Model Context Protocols},
+  author={Yang, Yixuan and Wu, Daoyuan and Chen, Yufan},
+  journal={arXiv preprint arXiv:2508.13220},
+  year={2025}
+}
+```
 
 ## Overview of MCPSecBench
 
