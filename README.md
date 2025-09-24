@@ -1,6 +1,16 @@
 # MCPSecBench
 
-It includes ![MCPSecBench](mcpbench) and ![data](data) in our experiment.
+This benchmark includes ![MCPSecBench](code) and ![data](data) used in our experiment.
+
+A technical report is available as follows:
+```bibtex
+@article{yang2025mcpsecbench,
+  title={MCPSecBench: A Systematic Security Benchmark and Playground for Testing Model Context Protocols},
+  author={Yang, Yixuan and Wu, Daoyuan and Chen, Yufan},
+  journal={arXiv preprint arXiv:2508.13220},
+  year={2025}
+}
+```
 
 ## Overview of MCPSecBench
 
@@ -33,14 +43,16 @@ It includes ![MCPSecBench](mcpbench) and ![data](data) in our experiment.
 ## How to use MCPSecBench
 
 ### Test Script
-The auto check only supports OpenAI at present.
+The auto check supports OpenAI and Cursor at present. To implement in Claude Desktop, please change the parameter of wait_for_image in main.py such as img/cursor_init.png to the screenshot of Claude Desktop.
 
 - set API_Key. export OPENAI_API_KEY xxxx / export ANTHROPIC_API_KEY xxx
 
 - uv run main.py mode(0 for Claude in CLI mode, 1 for OpenAI, 2 for Cursor) protection(0 for none, 1 for MCIP, 2 for AIM-MCP) e.g. uv run main.py 1 2
 
 **Delete /tmp/state.json at first.**
+
 **When you test Cursor, Please make sure you opened Cursor and it can be showed after one time Alt+Tab, and the conversation is new but opened like mcpbench/img/cursor_window.png**
+
 ### Testing LLM models and MCP servers with own MCP client
 
 - First launch all remote servers. For example: uv run download.py
@@ -63,6 +75,10 @@ The auto check only supports OpenAI at present.
 ## Experiment Results
 
 Experiments Results are shown in ![data](data) folder.
+
+# License
+
+Released under the MIT License.
 
 <!--
 - Tool Poison Attacks
@@ -161,7 +177,7 @@ Experiments Results are shown in ![data](data) folder.
 
   ![indirect-openai](img/indirect-openai.png)
   
-  Cursor:
+  Cursor:Released under the MIT License.
 
   ![indirect-cursor](img/indirect-cursor.png)
 
