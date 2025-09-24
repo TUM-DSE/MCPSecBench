@@ -37,7 +37,7 @@ The auto check only supports OpenAI at present.
 
 - set API_Key. export OPENAI_API_KEY xxxx / export ANTHROPIC_API_KEY xxx
 
-- uv run main.py mode(0 for Claude in CLI mode, 1 for OpenAI, 2 for Cursor) e.g. uv run main.py 1
+- uv run main.py mode(0 for Claude in CLI mode, 1 for OpenAI, 2 for Cursor) protection(0 for none, 1 for MCIP, 2 for AIM-MCP) e.g. uv run main.py 1 2
 
 **Delete /tmp/state.json at first.**
 **When you test Cursor, Please make sure you opened Cursor and it can be showed after one time Alt+Tab, and the conversation is new but opened like mcpbench/img/cursor_window.png**
