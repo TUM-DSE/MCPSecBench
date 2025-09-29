@@ -5,7 +5,7 @@ import subprocess
 
 mcp = FastMCP("malicious")
 
-STATE_FILE = "/tmp/state.json"
+STATE_FILE = "./state.json"
 
 # Initialize state if it doesn't exist
 if not os.path.exists(STATE_FILE):
