@@ -9,6 +9,7 @@ import subprocess
 import os
 from enum import Enum
 import aiohttp
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -443,17 +444,51 @@ class LocalClient:
 
     def convert_role(self, msg):
         if msg["role"] == "user":
-            return "<| User  |>"
+            return "<|User|>"
         if msg["role"] == "assistant":
-            return "<| Assistant |>"
-        if msg["role"] == "tool"
-            res = "<| Tool |> (tool id: "
+            return "<|Assistant|>"
+        if msg["role"] == "tool":
+            res = "<|Tool|> (tool id: "
             res += msg["tool_call_id"]
             res += "): "
             return res
+
+
+    def extract_MCP(self, text):
+        """
+        Removes text between <think> and </think> tags, then finds and prints
+        the content between the first opening curly bracket and its matching closing bracket.
+        """
+        import re
+        
+        # Remove text between <think> and </think> tags (including the tags)
+        # Using non-greedy matching to handle multiple think blocks
+        cleaned_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        
+        # Find the first opening curly bracket
+        first_bracket = cleaned_text.find('{')
+        
+        if first_bracket == -1:
+            print("No opening curly bracket found")
+            return
+        
+        # Find the matching closing bracket
+        bracket_count = 0
+        for i in range(first_bracket, len(cleaned_text)):
+            if cleaned_text[i] == '{':
+                bracket_count += 1
+            elif cleaned_text[i] == '}':
+                bracket_count -= 1
+                if bracket_count == 0:
+                    # Found the matching closing bracket
+                    content = cleaned_text[first_bracket:i+1]
+                    return content
+        
+        print("No matching closing bracket found")
+
         
     def chat(self, messages, tools):
-        prompt = 'You are an assistant that must help a user accomplish a goal using the tools they have available. You must respond with the appropriate tools and parameters using the MCP protocol format. Respond ONLY using the MCP format, like so { "tool": <tool_name>, "arguments": <arg1>,<arg2>, ... }. Do NOT add anything else to your response. Your response will be parsed automatically and MUST conform to the template you have been given. '
+        prompt = 'You are an assistant that must help a user accomplish a goal using the tools they have available. You must respond with the appropriate tools and parameters using the MCP protocol format. Respond ONLY using the MCP format, like so {"jsonrpc": "2.0", "id": <random_id>, "method": "tools/call", params": { "name": <method_name>, "arguments": { <arg1_name>: <arg1_value>, <arg2_name>: <arg2_value>, ...}}}. Do NOT add anything else to your response. Your response will be parsed automatically and MUST conform to the template you have been given. '
         prompt += ' You have the following tools available: '
         prompt += str(tools)
 
@@ -461,7 +496,7 @@ class LocalClient:
             prompt = prompt + self.convert_role(message) + ': ' + message['content'] + '\n'
 
         #print(f"Prompt: {prompt}")
-        self.call_inference(prompt, 2042)
+        return self.call_inference(prompt, 2048)
 
     def call_inference(self, prompt: str, nb_tokens: int) -> None:
     
@@ -479,8 +514,11 @@ class LocalClient:
                 print(f"Error response: {response.text}")
                 return None
     
-            print(f'LLM Response: {response.text}')
-            return response.text
+            response_data_json = json.loads(response.text, strict=False)
+            response_text = response_data_json.get('content')
+            print(f'LLM Response: {response_text}')
+            MCP_message = self.extract_MCP(response_text)
+            return response_text
     
         except requests.exceptions.RequestException as e:
                 print(f"Request failed: {e}")
@@ -610,11 +648,13 @@ class MultiMCPClient:
                     print("Error getting reply from LLM")  
                     return 0;
                 
+                # Get directly MCP respnse
                 message = response
                 messages.append({
                     "role": "assistant",
-                    "content": message.content or "",
-                    "tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
+                    "content": message or "",
+                    "tool_calls": None
+                    #"tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
                 })
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
