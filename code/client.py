@@ -441,11 +441,16 @@ class HTTPMCPConnection:
 
 class LocalClient:
 
-    def convert_role(self,role: str):
-        if role == "user":
+    def convert_role(self, msg):
+        if msg["role"] == "user":
             return "<| User  |>"
-        if role == "assistant":
+        if msg["role"] == "assistant":
             return "<| Assistant |>"
+        if msg["role"] == "tool"
+            res = "<| Tool |> (tool id: "
+            res += msg["tool_call_id"]
+            res += "): "
+            return res
         
     def chat(self, messages, tools):
         prompt = 'You are an assistant that must help a user accomplish a goal using the tools they have available. You must respond with the appropriate tools and parameters using the MCP protocol format. Respond ONLY using the MCP format, like so { "tool": <tool_name>, "arguments": <arg1>,<arg2>, ... }. Do NOT add anything else to your response. Your response will be parsed automatically and MUST conform to the template you have been given. '
@@ -453,9 +458,11 @@ class LocalClient:
         prompt += str(tools)
 
         for message in messages:
-            prompt = prompt + self.convert_role(message['role']) + ': ' + message['content'] + '\n'
+            prompt = prompt + self.convert_role(message) + ': ' + message['content'] + '\n'
 
-        print(f"Prompt: {prompt}")
+        #print(f"Prompt: {prompt}")
+        self.call_inference(prompt, 2042)
+
     def call_inference(self, prompt: str, nb_tokens: int) -> None:
     
         url = "http://192.168.32.10:8080/completion"
@@ -470,19 +477,14 @@ class LocalClient:
             print(f"Status: {response.status_code}")
             if response.status_code != 200:
                 print(f"Error response: {response.text}")
-                return
+                return None
     
-            print(response.text)
-    
-           # response_data_json = json.loads(response.text, strict=False)
-           # timings = response_data_json.get('timings')
-    
-          #  result_json = {
-           #         'request_latency_s': request_latency_s,
-           #         'decode_latency_ms': timings.get('predicted_ms'),
+            print(f'LLM Response: {response.text}')
+            return response.text
     
         except requests.exceptions.RequestException as e:
                 print(f"Request failed: {e}")
+                return None
 
 
 class MultiMCPClient:
@@ -491,14 +493,6 @@ class MultiMCPClient:
     def __init__(self, anthropic_api_key: str, openai_api_key: str):
         self.servers: Dict[str, MCPServerConnection] = {}
         self.local_client = LocalClient()
-        #self.anthropic_client = Anthropic(api_key=anthropic_api_key, timeout=60.0)
-        #self.openai_client = AsyncOpenAI(api_key=openai_api_key)
-        #self.deepseek_client = AsyncOpenAI(api_key=openai_api_key, base_url="https://api.deepseek.com/v1")
-        #self.qwen_client = AsyncOpenAI(api_key=openai_api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-        #self.llama_client = LlamaAPIClient(api_key=openai_api_key)
-
-        # TODO:
-
         
     async def add_server(self, config: MCPServerConfig):
         """Add and start a new MCP server"""
@@ -612,9 +606,11 @@ class MultiMCPClient:
                     tools=tools if tools else None
                 )
 
-                return 0;
+                if response == None:
+                    print("Error getting reply from LLM")  
+                    return 0;
                 
-                message = response.choices[0].message
+                message = response
                 messages.append({
                     "role": "assistant",
                     "content": message.content or "",
