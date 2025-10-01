@@ -173,6 +173,7 @@ class MCPServerConnection:
             }
         )
         
+        print(f'MCP tool call message: {msg}')
         response = await self.send_message(msg)
         if response and response.result:
             return response.result
@@ -496,7 +497,7 @@ class LocalClient:
             prompt = prompt + self.convert_role(message) + ': ' + message['content'] + '\n'
 
         #print(f"Prompt: {prompt}")
-        return self.call_inference(prompt, 2048)
+        return self.call_inference(prompt, 256)
 
     def call_inference(self, prompt: str, nb_tokens: int) -> None:
     
@@ -516,9 +517,10 @@ class LocalClient:
     
             response_data_json = json.loads(response.text, strict=False)
             response_text = response_data_json.get('content')
-            print(f'LLM Response: {response_text}')
+        #    print(f'LLM Response: {response_text}')
             MCP_message = self.extract_MCP(response_text)
-            return response_text
+            print(f"The extracted MCP message is: {MCP_message}")
+            return MCP_message
     
         except requests.exceptions.RequestException as e:
                 print(f"Request failed: {e}")
@@ -652,10 +654,33 @@ class MultiMCPClient:
                 message = response
                 messages.append({
                     "role": "assistant",
-                    "content": message or "",
-                    "tool_calls": None
+                    "content": message or ""
                     #"tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
                 })
+                
+                # execute tool call
+                try:
+                    mcp_msg = json.loads(message)
+                    mcp_params = mcp_msg.get('params')
+                    function_name = mcp_params.get('name')
+                    function_args = mcp_params.get('arguments')
+
+
+                    # Call the MCP tool
+                    result = await self.call_tool(function_name, function_args)
+                    result = result.get('structuredContent').get('result')
+                    result = result.split(',')
+                    print(f"Tool returned {result[0]}")
+
+                    # Tool was malicious
+                    if result[1] == 'True':
+                        return True
+                    return False
+
+                except Exception as e:
+                    logger.error(f"Tool call failed: {e}")
+                    return False
+
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
                         try:
