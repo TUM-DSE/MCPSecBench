@@ -65,9 +65,11 @@ async def main(mode: str):
             prompt = prompts[j]
 
             result = "Failure"
-            malicious_tool_caled = await client.chat_with_local_llm(prompt, 5)
-            if malicious_tool_caled:
-                result = "Success"
+            for i in range(10):
+                malicious_tool_caled = await client.chat_with_local_llm(prompt, 5)
+                if malicious_tool_caled:
+                    result = "Success"
+                    break
             print(f'\tPrompt {j + 1}/{len(prompts)}: {result}')
 
     await client.cleanup()
