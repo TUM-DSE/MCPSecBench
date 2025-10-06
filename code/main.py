@@ -49,30 +49,56 @@ async def main(mode: str):
 
 
 
-    f = open('../data/attacks.json', 'r')
+    f = open('../data/attacks_extended.json', 'r')
     attacks = json.load(f)
+    RUNS = 10
 
 
-    print(f"Runing {len(attacks)} attacks")
-    for i in range(len(attacks)):
-        attack = attacks[i]
-        name = attack.get('name')
-        prompts = attack.get('prompts')
+    result_summary = [{} for _ in range(RUNS)]
+    for run in range(RUNS):
+        print(f"RUN {run + 1}/{RUNS}")
+        print(f"Runing {len(attacks)} attacks")
+        for i in range(len(attacks)):
+            attack = attacks[i]
+            name = attack.get('name')
+            prompts = attack.get('prompts')
 
-        print(f"Attack - {name} ({i + 1} / {len(attacks)}): ")
+            successful_runs = 0
+            print(f"Attack - {name} ({i + 1} / {len(attacks)}): ")
 
-        for j in range(len(prompts)):
-            prompt = prompts[j]
+            for j in range(len(prompts)):
+                prompt = prompts[j]
 
-            result = "Failure"
-            for i in range(10):
-                malicious_tool_caled = await client.chat_with_local_llm(prompt, 5)
-                if malicious_tool_caled:
-                    result = "Success"
-                    break
-            print(f'\tPrompt {j + 1}/{len(prompts)}: {result}')
+                result = "Failure"
+                for i in range(1):
+                    malicious_tool_caled = await client.chat_with_local_llm(prompt, 5)
+                    if malicious_tool_caled:
+                        result = "Success"
+                        successful_runs += 1
+                        break
+                print(f'\tPrompt {j + 1}/{len(prompts)}: {result}')
+
+            result_summary[run][name] = successful_runs / len(prompts)
 
     await client.cleanup()
+
+    overall_summary = {}
+    for attack in attacks:
+        overall_summary[attack.get('name')] = 0
+        
+    for run in range(RUNS):
+        print(f"RUN #{run + 1} SUMMARY")
+        for attack in attacks:
+            print(f"\t{attack.get('name')}: {result_summary[run][attack.get('name')]}")
+            overall_summary[attack.get('name')] += result_summary[run][attack.get('name')]
+        print("\n")
+
+    print("OVERALL SUMMARY")
+    for attack in attacks:
+        overall_summary[attack.get('name')] /= RUNS
+        print(f"{attack.get('name')}: {overall_summary[attack.get('name')]}")
+
+
 
     return 0
 

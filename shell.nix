@@ -20,5 +20,6 @@
 		python313Packages.uvicorn
 		python313Packages.mcp
 		uv
+		open-policy-agent
 	];
 }
