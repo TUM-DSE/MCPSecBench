@@ -1,3 +1,5 @@
+from client import POLICY_FAILURE
+from client import ATTACK_SUCCESS
 import subprocess
 import sys
 import json
@@ -7,7 +9,7 @@ from pwn import *
 from client import *
 
 
-async def main(mode: str):
+async def main(policy_active: int, base_policy_file : str, user_policy_file : str):
 
 
     # MCP servers
@@ -71,10 +73,13 @@ async def main(mode: str):
 
                 result = "Failure"
                 for i in range(1):
-                    malicious_tool_caled = await client.chat_with_local_llm(prompt, 5)
-                    if malicious_tool_caled:
+                    malicious_tool_called = await client.chat_with_local_llm(prompt, 5, policy_active, base_policy_file, user_policy_file)
+                    if malicious_tool_called == ATTACK_SUCCESS:
                         result = "Success"
                         successful_runs += 1
+                        break
+                    if malicious_tool_called == POLICY_FAILURE:
+                        result = "Policy check failed"
                         break
                 print(f'\tPrompt {j + 1}/{len(prompts)}: {result}')
 
@@ -98,60 +103,10 @@ async def main(mode: str):
         overall_summary[attack.get('name')] /= RUNS
         print(f"{attack.get('name')}: {overall_summary[attack.get('name')]}")
 
-
-
     return 0
 
-    print("Hello from MCPSecBench!")
-    print("This script shows results of example attacks")
-    attacks = ["Tool Poisoning Attack", "Tool Shadowing Attack", "Package Name Squatting(Server Name)", "Package Name Squatting(Tool Name)", "Data Exfiltration", "Prompt Injection", "Rug Pull", "Indirect Prompt Injection", "Sandbox Escape", "Tool Misuse via Confused AI", "Vulnerable Server"]
-    command = ["python3", "download.py"]
-
-    loop_res = []
-    if int(mode) < 2:
-        server = process(command)
-        i_command = ["python3", "client.py", mode]
-        sh = process(i_command)
-        sh.recvuntil(b"User Input:")
-    else:
-        print("TEO: pyGUI no longer available")
-        return;
-
-
-    flag = 0
-    file = open('data.json', 'r')
-    res = open('experiment.csv', 'w')
-    csv_w = csv.writer(res)
-    csv_w.writerows([attacks])
-    pr = json.load(file)
-    for j in range(15):
-        if int(mode) < 2:
-            for i in range(len(pr)):
-                sh.sendline(pr[i]['prompt'])
-                msg = sh.recvuntil(b"User Input:")
-                print(msg)
-                if flag == 0 and pr[i]['attack'] == "Rug Pull":
-                    flag = 1
-                    sh.sendline(pr[i]['prompt'])
-                    msg = sh.recvuntil(b"User Input:")
-                sh.sendline(pr[i]['result'])
-                msg = sh.recvuntil(b"User Input:")
-                if b"Attack success" in msg:
-                    loop_res.append("1")
-                    print(f"{attacks[i]}: Attack success")
-                elif b"Attack detected" in msg:
-                    loop_res.append("-1")
-                    print(f"{attacks[i]}: Attack detected")
-                else:
-                    loop_res.append("0")
-                    print(f"{attacks[i]}: Attack fail")
-            csv_w.writerows([loop_res])
-            loop_res = []
-            sh.sendline(b"forget all conversation")
-            sh.recvuntil(b"User Input:")
-
-    # sh.interactive()
-
-
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1]))
+    if len(sys.argv) - 1 != 3:
+        print(f'Usage: uv run {sys.argv[0]} <0/1> <base_policy_file> <user_policy_file>')
+        sys.exit(0)
+    asyncio.run(main(int(sys.argv[1]), sys.argv[2], sys.argv[3]))

@@ -31,7 +31,8 @@ async def make_get_request(url: str) -> str:
         result of GET request.
     """
     
-    if "George" in url:
+    url = url.lower()
+    if "george" in url:
         return "Get,True"
 
     return "Get,False"

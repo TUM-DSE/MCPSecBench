@@ -15,6 +15,11 @@ import requests
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+ATTACK_FAILURE = 0
+ATTACK_SUCCESS = 1
+POLICY_FAILURE = 2
+
+
 class ServerType(Enum):
     LOCAL = "local"
     SSE = "sse"
@@ -677,12 +682,10 @@ class MultiMCPClient:
         return tools
 
 
-    async def chat_with_local_llm(self, message: str, max_turns: int = 5) -> str:
+    async def chat_with_local_llm(self, message: str, max_turns: int = 5, policy_active: int = 0, base_policy_file: str = "", user_policy_file: str = "") -> str:
         tools = self.format_tools_for_openai()
         #print(f'Tools: {tools}')
         messages = [{"role": "user", "content": message}]
-         
-        
 
         for turn in range(max_turns):
             tools = self.format_tools_for_openai()
@@ -706,8 +709,6 @@ class MultiMCPClient:
                     "content": message
                     #"tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
                 })
-
-
                 
                 # execute tool call
                 try:
@@ -724,9 +725,35 @@ class MultiMCPClient:
                     result = result.split(',')
                     #print(f"Tool returned {result[0], result[-1]}")
 
+                    policy_check = subprocess.run([
+                        'opa', 'eval',
+                        '--stdin-input',
+                        'data.mcp_base.valid',
+                        '-d', f'{base_policy_file}',
+                        '-d', f'{user_policy_file}'
+                    ],
+                    capture_output=True,
+                    text=True,
+                    input=json.dumps(mcp_msg)
+                    )
+                    #print(f'Policy_check: {policy_check.stdout}')
+                    policy_fail = not json.loads(policy_check.stdout).get("result")[0].get("expressions")[0].get("value")
+                    #print(f' Policy fail: {policy_fail}')
                     # Tool was malicious
                     if result[-1] == 'True':
-                        return True
+                        if policy_active > 0:
+                            if policy_fail:
+                                #print("\n\n>>>>> Policy correctly stopped attack!\n\n")
+                                return POLICY_FAILURE
+                                #return False
+                        #return True
+                        return ATTACK_SUCCESS
+
+                    # Tool was not malicious
+                    if policy_active > 0:
+                        if policy_fail:
+                            print("\n\n>>>>> ERROR: Policy failed on legitimate request!\n\n")
+
 
                     messages.append({
                         "role": "tool",
@@ -735,307 +762,17 @@ class MultiMCPClient:
 
                 except Exception as e:
                     logger.error(f"Tool call failed: {e}")
-                    return False
+                    #return False
+                    return ATTACK_FAILURE
                     
             except Exception as e:
                 logger.error(f"OpenAI API call failed: {e}")
-                return False        
+                return ATTACK_FAILURE
 
         #return current_messages[-1].get("content", "Max turns reached")
-        return False   
-
-    async def chat_with_openai(self, message: str, max_turns: int = 5) -> str:
-        tools = self.format_tools_for_openai()
-        messages = [{"role": "user", "content": message}]
-        for turn in range(max_turns):
-            try:
-                response = await self.openai_client.chat.completions.create(
-                    model="gpt-4.1",
-                    messages=messages,
-                    tools=tools if tools else None,
-                    tool_choice="auto" if tools else None
-                )
-                
-                message = response.choices[0].message
-                messages.append({
-                    "role": "assistant",
-                    "content": message.content or "",
-                    "tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
-                })
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        try:
-                            function_name = tool_call.function.name
-                            function_args = json.loads(tool_call.function.arguments)
-                            
-                            # Call the MCP tool
-                            result = await self.call_tool(function_name, function_args)
-                            
-                            # Add tool result to conversation
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": json.dumps(result) if result else "Tool executed successfully"
-                            })
-                            
-                        except Exception as e:
-                            logger.error(f"Tool call failed: {e}")
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": f"Error: {str(e)}"
-                            })
-                    
-                    # Continue conversation after tool calls
-                    continue
-                else:
-                    # No tool calls, return the response
-                    return message.content or ""
-                    
-            except Exception as e:
-                logger.error(f"OpenAI API call failed: {e}")
-                return f"Error: {str(e)}"
-        
-        return current_messages[-1].get("content", "Max turns reached")
-
-    async def chat_with_llama(self, message: str, max_turns: int = 5) -> str:
-        tools = self.format_tools_for_openai()
-        messages = [{"role": "user", "content": message}]
-        for turn in range(max_turns):
-            try:
-                response = await self.llama_client.chat.completions.create(
-                    model="model",
-                    messages=messages,
-                    tools=tools if tools else None,
-                    tool_choice="auto" if tools else None
-                )
-                
-                message = response.choices[0].message
-                messages.append({
-                    "role": "assistant",
-                    "content": message.content or "",
-                    "tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
-                })
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        try:
-                            function_name = tool_call.function.name
-                            function_args = json.loads(tool_call.function.arguments)
-                            
-                            # Call the MCP tool
-                            result = await self.call_tool(function_name, function_args)
-                            
-                            # Add tool result to conversation
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": json.dumps(result) if result else "Tool executed successfully"
-                            })
-                            
-                        except Exception as e:
-                            logger.error(f"Tool call failed: {e}")
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": f"Error: {str(e)}"
-                            })
-                    
-                    # Continue conversation after tool calls
-                    continue
-                else:
-                    # No tool calls, return the response
-                    return message.content or ""
-                    
-            except Exception as e:
-                logger.error(f"Llama API call failed: {e}")
-                return f"Error: {str(e)}"
-        
-        return current_messages[-1].get("content", "Max turns reached")
-
+        return ATTACK_FAILURE
     
-    async def chat_with_deepseek(self, message: str, max_turns: int = 5) -> str:
-        tools = self.format_tools_for_openai()
-        messages = [{"role": "user", "content": message}]
-        for turn in range(max_turns):
-            try:
-                response = await self.deepseek_client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=messages,
-                    tools=tools if tools else None,
-                    tool_choice="auto" if tools else None
-                )
-                
-                message = response.choices[0].message
-                messages.append({
-                    "role": "assistant",
-                    "content": message.content or "",
-                    "tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
-                })
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        try:
-                            function_name = tool_call.function.name
-                            function_args = json.loads(tool_call.function.arguments)
-                            
-                            # Call the MCP tool
-                            result = await self.call_tool(function_name, function_args)
-                            
-                            # Add tool result to conversation
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": json.dumps(result) if result else "Tool executed successfully"
-                            })
-                            
-                        except Exception as e:
-                            logger.error(f"Tool call failed: {e}")
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": f"Error: {str(e)}"
-                            })
-                    
-                    # Continue conversation after tool calls
-                    continue
-                else:
-                    # No tool calls, return the response
-                    return message.content or ""
-                    
-            except Exception as e:
-                logger.error(f"DeepSeek API call failed: {e}")
-                return f"Error: {str(e)}"
-        
-        return current_messages[-1].get("content", "Max turns reached")
-
-
-    async def chat_with_qwen(self, message: str, max_turns: int = 5) -> str:
-        tools = self.format_tools_for_openai()
-        messages = [{"role": "user", "content": message}]
-        for turn in range(max_turns):
-            try:
-                response = await self.qwen_client.chat.completions.create(
-                    model="qwen-plus",
-                    messages=messages,
-                    tools=tools if tools else None,
-                    tool_choice="auto" if tools else None
-                )
-                
-                message = response.choices[0].message
-                messages.append({
-                    "role": "assistant",
-                    "content": message.content or "",
-                    "tool_calls": [tc.model_dump() for tc in message.tool_calls] if message.tool_calls else None
-                })
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        try:
-                            function_name = tool_call.function.name
-                            function_args = json.loads(tool_call.function.arguments)
-                            
-                            # Call the MCP tool
-                            result = await self.call_tool(function_name, function_args)
-                            
-                            # Add tool result to conversation
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": json.dumps(result) if result else "Tool executed successfully"
-                            })
-                            
-                        except Exception as e:
-                            logger.error(f"Tool call failed: {e}")
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": f"Error: {str(e)}"
-                            })
-                    
-                    # Continue conversation after tool calls
-                    continue
-                else:
-                    # No tool calls, return the response
-                    return message.content or ""
-                    
-            except Exception as e:
-                logger.error(f"QWen API call failed: {e}")
-                return f"Error: {str(e)}"
-        
-        return current_messages[-1].get("content", "Max turns reached")
-
-
-    async def chat_with_claude(self, message: str, max_tokens: int = 1024) -> str:
-        """Chat with Claude using available MCP tools"""
-        tools = self.format_tools_for_claude()
-        
-        # logger.info(f"tools: {tools}")
-
-        messages = [{"role": "user", "content": message}]
-        
-        # Initial request to Claude
-        try:
-            response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1000,
-                messages=messages,
-                tools=tools if tools else None
-            )
-        except anthropic.APIConnectionError as e:
-            logger.error(f"Connection error: {e}")
-            raise
-        
-        except anthropic.RateLimitError as e:
-            logger.error(f"Rate limit error: {e}")
-        
-        except anthropic.APIError as e:
-            logger.error(f"API error: {e}")
-            raise
-        
-        # Handle tool calls
-        while response.stop_reason == "tool_use":
-            # logger.info(f"content: {response.content}")
-            messages.append({"role": "assistant", "content": response.content})
-            
-            # Execute tool calls
-            tool_results = []
-            for content_block in response.content:
-                if content_block.type == "tool_use":
-                    tool_name = content_block.name
-                    tool_args = content_block.input
-                    
-                    try:
-                        result = await self.call_tool(tool_name, tool_args)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": content_block.id,
-                            "content": json.dumps(result, indent=2)
-                        })
-                    except Exception as e:
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": content_block.id,
-                            "content": f"Error: {str(e)}",
-                            "is_error": True
-                        })
-            
-            # Send tool results back to Claude
-            messages.append({"role": "user", "content": tool_results})
-            
-            response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1000,
-                messages=messages,
-                tools=tools if tools else None
-            )
-        
-        # Extract text response
-        text_content = ""
-        for content_block in response.content:
-            if content_block.type == "text":
-                text_content += content_block.text
-        
-        return text_content
-    
-    async def interactive_chat(self, mode: int):
+    async def interactive_chat(self, max_turns: int, policy_active: int, base_policy_file: str, user_policy_file: str):
         """Start an interactive chat session"""
         print("Type 'quit' to exit, 'tools' to list available tools, 'resources' to list resources")
         print("-" * 50)
@@ -1062,23 +799,7 @@ class MultiMCPClient:
                 if not user_input:
                     continue
                 
-                if mode == 0:
-                    print("Local LLM:")
-                    response = await self.chat_with_local_llm(user_input)
-                    #print("\nClaude: ", end="", flush=True)
-                    #response = await self.chat_with_claude(user_input)
-                elif mode == 1:
-                    print("\nOpenAI: ", end="", flush=True)
-                    response = await self.chat_with_openai(user_input)
-                elif mode == 2:
-                    print("\nDeepSeek: ", end="", flush=True)
-                    response = await self.chat_with_deepseek(user_input)
-                elif mode == 3:
-                    print("\nQWen: ", end="", flush=True)
-                    response = await self.chat_with_qwen(user_input)
-                elif mode == 4:
-                    print("\nLlama: ", end="", flush=True)
-                    response = await self.chat_with_llama(user_input)
+                response = await self.chat_with_local_llm(user_input, 5, policy_active, base_policy_file, user_policy_file)
                 print(response)
                 
             except KeyboardInterrupt:
