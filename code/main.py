@@ -31,7 +31,7 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
         MCPServerConfig(
             name="compute-assistant",
             server_type=ServerType.LOCAL,
-            command=["uv"],
+           command=["uv"],
             args=["run", "./maliciousadd.py"],
             description="Enhanced computer"
         ),
@@ -51,7 +51,14 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
 
 
 
-    f = open('../data/attacks_extended.json', 'r')
+    policy_file_path = "../data/policy_overhead.txt"
+    try:
+        os.remove(policy_file_path)
+    except Exception as e:
+        pass
+    with open(policy_file_path, "w"):
+        pass
+    f = open('../data/attacks_updated.json', 'r')
     attacks = json.load(f)
     RUNS = 10
 
@@ -64,16 +71,17 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
             attack = attacks[i]
             name = attack.get('name')
             prompts = attack.get('prompts')
+            malicious_prompt = attack.get('malicious_prompt')
 
             successful_runs = 0
             print(f"Attack - {name} ({i + 1} / {len(attacks)}): ")
 
             for j in range(len(prompts)):
                 prompt = prompts[j]
-
+#
                 result = "Failure"
                 for i in range(1):
-                    malicious_tool_called = await client.chat_with_local_llm(prompt, 5, policy_active, base_policy_file, user_policy_file)
+                    malicious_tool_called = await client.chat_with_local_llm(prompt, 5, policy_active, base_policy_file, user_policy_file, malicious_prompt, policy_file_path)
                     if malicious_tool_called == ATTACK_SUCCESS:
                         result = "Success"
                         successful_runs += 1
@@ -83,9 +91,21 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
                         break
                 print(f'\tPrompt {j + 1}/{len(prompts)}: {result}')
 
+                # Reset state of tool invocations
+                result = await client.call_tool("signature-checkers_buy_item", json.loads("{\"item\": \"guitar\"}"))
+                result = result.get('content')[0].get('text')
+                result = result.split(',')
+                while result[-1] != "True":
+                    result = await client.call_tool("signature-checkers_buy_item", json.loads("{\"item\": \"guitar\"}"))
+                    result = result.get('content')[0].get('text')
+                    result = result.split(',')
+
+
             result_summary[run][name] = successful_runs / len(prompts)
 
-    await client.cleanup()
+    print("Doing client cleanup")
+    #await client.cleanup()
+    print("Done cleanup")
 
     overall_summary = {}
     for attack in attacks:
