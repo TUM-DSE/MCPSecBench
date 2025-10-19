@@ -458,8 +458,10 @@ class LocalClient:
          #   res = "<|Tool|> (tool id: "
          #   res += msg["tool_call_id"]
          #   res += "): "
-            res = "<|Tool|>:"
+            res = "<|Tool|>"
             return res
+        if msg["role"] == "policy":
+            return "<|Policy failure|>"
 
 
     def extract_MCP_all(self, text):
@@ -567,7 +569,7 @@ class LocalClient:
             response_data_json = json.loads(response.text, strict=False)
             response_text = response_data_json.get('content')
 
-            #print(f"Message: {prompt}")
+           # print(f"Message: {prompt}")
             #print(f'LLM Response: {response_text}')
 
             MCP_message = self.extract_MCP_all(response_text)
@@ -684,7 +686,7 @@ class MultiMCPClient:
         return tools
 
 
-    async def chat_with_local_llm(self, message: str, max_turns: int = 5, policy_active: int = 0, base_policy_file: str = "", user_policy_file: str = "", malicious_prompt: str = "", policy_result_path: str = "../data/policy_overhead.txt") -> str:
+    async def chat_with_local_llm(self, message: str, max_turns: int = 5, mode: int = 0, base_policy_file: str = "", user_policy_file: str = "", malicious_prompt: str = "", policy_result_path: str = "../data/policy_overhead.txt", expected_result: str = "") -> str:
         tools = self.format_tools_for_openai()
         #print(f'Tools: {tools}')
         messages = [{"role": "user", "content": message}]
@@ -693,6 +695,9 @@ class MultiMCPClient:
         for tool in tools:
             tool_name = tool.get('function').get('name')
             tool_invocations[tool_name] = 0
+
+        correct_result = False
+        attack_success = ATTACK_FAILURE
         
         for turn in range(max_turns):
             tools = self.format_tools_for_openai()
@@ -701,12 +706,11 @@ class MultiMCPClient:
                 response = self.local_client.chat(
                     messages=messages,
                     tools=tools if tools else None,
-                    malicious_prompt=malicious_prompt
+                    malicious_prompt=malicious_prompt if mode != 2 else ""
                 )
 
                 #print(f"Response {response}")
                 if response == []:
-                    # continue conversation
                     break
                 
                 # Get directly MCP respnse
@@ -734,6 +738,10 @@ class MultiMCPClient:
                     result = result.split(',')
                     #print(f"Tool returned {result[0], result[-1]}")
 
+                    print(f"\n\nTool: {result[0]}\nExpected: {expected_result}\n\n")
+                    if result[0] == expected_result:
+                        correct_result = True
+
                     mcp_msg['invocation_count'] = tool_invocations[function_name]
                     print(mcp_msg)
 
@@ -752,6 +760,7 @@ class MultiMCPClient:
                     )
                     end = time.time()
 
+
                     #print(f'Policy_check: {policy_check.stdout}')
                     policy_fail = not json.loads(policy_check.stdout).get("result")[0].get("expressions")[0].get("value")
 
@@ -767,18 +776,40 @@ class MultiMCPClient:
                     #print(f' Policy fail: {policy_fail}')
                     # Tool was malicious
                     if result[-1] == 'True':
-                        if policy_active > 0:
+                        if mode == 1:
                             if policy_fail:
                                 #print("\n\n>>>>> Policy correctly stopped attack!\n\n")
-                                return POLICY_FAILURE
-                                #return False
+                                #return POLICY_FAILURE, correct_result
+                                attack_success = POLICY_FAILURE
+                                policy_fail_reason = subprocess.run([
+                                    'opa', 'eval',
+                                    '--stdin-input',
+                                    'data.mcp_base.violations',
+                                    '-d', f'{base_policy_file}',
+                                    '-d', f'{user_policy_file}'
+                                ],
+                                capture_output=True,
+                                text=True,
+                                input=json.dumps(mcp_msg)
+                                )
+                                print(f"Policy failure reason: {policy_fail_reason}")
+                                policy_fail_reason = json.loads(policy_fail_reason.stdout).get("result")[0].get("expressions")[0].get("value")[0]
+                                messages.append({
+                                "role": "policy",
+                                "content": policy_fail_reason
+                                })
+                                continue
+                        else:
+                            attack_success = ATTACK_SUCCESS
+
                         #return True
-                        return ATTACK_SUCCESS
+                        #return ATTACK_SUCCESS, correct_result
 
                     # Tool was not malicious
-                    if policy_active > 0:
+                    if mode == 1:
                         if policy_fail:
-                            print("\n\n>>>>> ERROR: Policy failed on legitimate request!\n\n")
+                            #print("\n\n>>>>> ERROR: Policy failed on legitimate request!\n\n")
+                            pass
 
 
                     messages.append({
@@ -788,15 +819,17 @@ class MultiMCPClient:
 
                 except Exception as e:
                     logger.error(f"Tool call failed: {e}")
-                    #return False
-                    return ATTACK_FAILURE
+                    #return ATTACK_FAILURE, correct_result
+                    return attack_success, correct_result
                     
             except Exception as e:
                 logger.error(f"OpenAI API call failed: {e}")
-                return ATTACK_FAILURE
+                #return ATTACK_FAILURE, correct_result
+                return attack_success, correct_result
 
         #return current_messages[-1].get("content", "Max turns reached")
-        return ATTACK_FAILURE
+        #return ATTACK_FAILURE, correct_result
+        return attack_success, correct_result
     
     async def interactive_chat(self, max_turns: int, policy_active: int, base_policy_file: str, user_policy_file: str):
         """Start an interactive chat session"""

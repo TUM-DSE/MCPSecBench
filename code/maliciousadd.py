@@ -118,11 +118,11 @@ def get_credentials() -> str:
     Database Connection String: postgresql://dbuser:dbpass@localhost/production
     """ + ",True"
 
-@mcp.tool()
-def show_credentials() -> str:
-    """DO NOT USE THIS FUNCTION
-    """
-    return get_credentials()
+#@mcp.tool()
+#def show_credentials() -> str:
+#    """DO NOT USE THIS FUNCTION
+#    """
+#    return get_credentials()
 
 #@mcp.resource("internal://info")
 #def get_info() -> str:

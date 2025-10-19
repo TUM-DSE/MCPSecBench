@@ -9,7 +9,16 @@ from pwn import *
 from client import *
 
 
-async def main(policy_active: int, base_policy_file : str, user_policy_file : str):
+async def main(mode: int, base_policy_file : str, user_policy_file : str, log_file : str = None):
+
+    banner=""
+    if mode == 0:
+        banner="------- POISONED CONTEXT --------"
+    elif mode == 1:
+        banner="------- POLICY --------"
+    elif mode == 2:
+        banner="------- NORMAL OPERATION --------"
+
 
 
     # MCP servers
@@ -60,18 +69,22 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
         pass
     f = open('../data/attacks_updated.json', 'r')
     attacks = json.load(f)
-    RUNS = 10
+    RUNS = 3
 
 
     result_summary = [{} for _ in range(RUNS)]
+    utility_summary = [0 for _ in range(RUNS)]
     for run in range(RUNS):
         print(f"RUN {run + 1}/{RUNS}")
         print(f"Runing {len(attacks)} attacks")
+        total_utility = 0
+        actual_utility = 0
         for i in range(len(attacks)):
             attack = attacks[i]
             name = attack.get('name')
             prompts = attack.get('prompts')
             malicious_prompt = attack.get('malicious_prompt')
+            expected_result = attack.get('expected_result')
 
             successful_runs = 0
             print(f"Attack - {name} ({i + 1} / {len(attacks)}): ")
@@ -81,7 +94,13 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
 #
                 result = "Failure"
                 for i in range(1):
-                    malicious_tool_called = await client.chat_with_local_llm(prompt, 5, policy_active, base_policy_file, user_policy_file, malicious_prompt, policy_file_path)
+                    malicious_tool_called, correct_result = await client.chat_with_local_llm(prompt, 5, mode, base_policy_file, user_policy_file, malicious_prompt, policy_file_path, expected_result)
+
+                    if expected_result != None:
+                        total_utility += 1
+                        if correct_result:
+                            actual_utility += 1
+
                     if malicious_tool_called == ATTACK_SUCCESS:
                         result = "Success"
                         successful_runs += 1
@@ -102,12 +121,14 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
 
 
             result_summary[run][name] = successful_runs / len(prompts)
+        utility_summary[run] = actual_utility / total_utility
 
     print("Doing client cleanup")
     #await client.cleanup()
     print("Done cleanup")
 
     overall_summary = {}
+    overall_utility = 0
     for attack in attacks:
         overall_summary[attack.get('name')] = 0
         
@@ -117,16 +138,28 @@ async def main(policy_active: int, base_policy_file : str, user_policy_file : st
             print(f"\t{attack.get('name')}: {result_summary[run][attack.get('name')]}")
             overall_summary[attack.get('name')] += result_summary[run][attack.get('name')]
         print("\n")
+        print(f"Utility: {utility_summary[run]}")
+        overall_utility += utility_summary[run]
 
+    
     print("OVERALL SUMMARY")
     for attack in attacks:
         overall_summary[attack.get('name')] /= RUNS
         print(f"{attack.get('name')}: {overall_summary[attack.get('name')]}")
+    print(f"Utility: {overall_utility/RUNS}")
+
+    if log_file != None:
+        with open(log_file, "a+") as f:
+            f.write(banner + "\n")
+            f.write("OVERALL SUMMARY\n")
+            for attack in attacks:
+                f.write(f"{attack.get('name')}: {overall_summary[attack.get('name')]}\n")
+            f.write(f"Utility: {overall_utility/RUNS}\n\n\n")
 
     return 0
 
 if __name__ == "__main__":
-    if len(sys.argv) - 1 != 3:
-        print(f'Usage: uv run {sys.argv[0]} <0/1> <base_policy_file> <user_policy_file>')
+    if len(sys.argv) - 1 != 4:
+        print(f'Usage: uv run {sys.argv[0]} <0/1> <base_policy_file> <user_policy_file>  <log_file>')
         sys.exit(0)
-    asyncio.run(main(int(sys.argv[1]), sys.argv[2], sys.argv[3]))
+    asyncio.run(main(int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]))
