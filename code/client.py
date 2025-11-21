@@ -703,11 +703,18 @@ class MultiMCPClient:
             tools = self.format_tools_for_openai()
             #print(f"Turn: {turn}")
             try:
+                start_request = time.time()
                 response = self.local_client.chat(
                     messages=messages,
                     tools=tools if tools else None,
                     malicious_prompt=malicious_prompt if mode != 2 else ""
                 )
+                end_request = time.time()
+
+                with open('../data/request_latency.txt', "a") as f:
+                    f.write(f"[Request]: {end_request - start_request} s\n")
+
+
 
                 #print(f"Response {response}")
                 if response == []:
